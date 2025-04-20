@@ -349,18 +349,8 @@ class OpenAIClient:
     def send_message(self,
                     current_messages,
                      model=default["model"],
-                     max_completion_tokens=default["max_completion_tokens"],
-                     top_p=default["top_p"],
-                     frequency_penalty=default["frequency_penalty"],
-                     presence_penalty=default["presence_penalty"],
-                     stop=[],
-                     timeout=default["timeout"],
-                     max_attempts=default["max_attempts"],
-                     waiting_time=default["waiting_time"],
-                     exponential_backoff_factor=default["exponential_backoff_factor"],
-                     n = 1,
-                     response_format=None,
-                     echo=False):
+                     max_completion_tokens=default["max_completion_tokens"]
+                     ):
         """
         Sends a message to the OpenAI API and returns the response.
 
@@ -384,19 +374,6 @@ class OpenAIClient:
         A dictionary representing the generated response.
         """
 
-        def aux_exponential_backoff():
-            nonlocal waiting_time
-
-            # in case waiting time was initially set to 0
-            if waiting_time <= 0:
-                waiting_time = 2
-
-            logger.info(f"Request failed. Waiting {waiting_time} seconds between requests...")
-            time.sleep(waiting_time)
-
-            # exponential backoff
-            waiting_time = waiting_time * exponential_backoff_factor
-
         # setup the OpenAI configurations for this client.
         self._setup_from_config()
         
@@ -404,20 +381,16 @@ class OpenAIClient:
         chat_api_params = {
             "model": model,
             "messages": current_messages,
-            "max_completion_tokens":max_completion_tokens,
-            "top_p": top_p,
-            "frequency_penalty": frequency_penalty,
-            "presence_penalty": presence_penalty,
-            "stop": stop,
-            "timeout": timeout,
-            "stream": False,
-            "n": n,
+            "max_completion_tokens": max_completion_tokens,
+            "response_format": {
+                "type": "text"
+            },
+            "reasoning_effort": "medium",
         }
 
-        if response_format is not None:
-            chat_api_params["response_format"] = response_format
-
         i = 0
+        max_attempts = 3
+        waiting_time = default["waiting_time"]
         while i < max_attempts:
             try:
                 i += 1
@@ -471,11 +444,9 @@ class OpenAIClient:
             except openai.RateLimitError:
                 logger.warning(
                     f"[{i}] Rate limit error, waiting a bit and trying again.")
-                aux_exponential_backoff()
-            
+                
             except NonTerminalError as e:
                 logger.error(f"[{i}] Non-terminal error: {e}")
-                aux_exponential_backoff()
                 
             except Exception as e:
                 logger.error(f"[{i}] Error: {e}")
@@ -546,9 +517,7 @@ class OpenAIClient:
                 logger.debug("Token count: gpt-4 may update over time. Returning num tokens assuming gpt-4-0613.")
                 return self._count_tokens(messages, model="gpt-4-0613")
             else:
-                raise NotImplementedError(
-                    f"""num_tokens_from_messages() is not implemented for model {model}. See https://github.com/openai/openai-python/blob/main/chatml.md for information on how messages are converted to tokens."""
-                )
+                return self._count_tokens(messages, model="gpt-4-0613")
             num_tokens = 0
             for message in messages:
                 num_tokens += tokens_per_message
