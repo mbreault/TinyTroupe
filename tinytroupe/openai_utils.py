@@ -23,7 +23,7 @@ config = utils.read_config_file()
 # Default parameter values
 ###########################################################################
 default = {}
-default["model"] = config["OpenAI"].get("MODEL", "gpt-4o")
+default["model"] = config["OpenAI"].get("MODEL", "o4-mini")
 default["max_completion_tokens"] = int(config["OpenAI"].get("MAX_TOKENS", "1024"))
 default["top_p"] = int(config["OpenAI"].get("TOP_P", "0"))
 default["frequency_penalty"] = float(config["OpenAI"].get("FREQ_PENALTY", "0.0"))
@@ -459,27 +459,35 @@ class OpenAIClient:
         Calls the OpenAI API with the given parameters. Subclasses should
         override this method to implement their own API calls.
         """   
-
-        if "response_format" in chat_api_params:
-            # to enforce the response format via pydantic, we need to use a different method
-
+        # Remove any parameters that aren't supported by the new API
+        if "stream" in chat_api_params:
             del chat_api_params["stream"]
+        if "timeout" in chat_api_params:
+            del chat_api_params["timeout"]
+        if "n" in chat_api_params:
+            del chat_api_params["n"]
+        if "echo" in chat_api_params:
+            del chat_api_params["echo"]
 
-            return self.client.beta.chat.completions.parse(
-                    **chat_api_params
-                )
-        
-        else:
-            return self.client.chat.completions.create(
-                        **chat_api_params
-                    )
+        # Ensure we have the required parameters
+        if "response_format" not in chat_api_params:
+            chat_api_params["response_format"] = {"type": "text"}
+        if "reasoning_effort" not in chat_api_params:
+            chat_api_params["reasoning_effort"] = "medium"
+        if "store" not in chat_api_params:
+            chat_api_params["store"] = False
+
+        return self.client.chat.completions.create(**chat_api_params)
 
     def _raw_model_response_extractor(self, response):
         """
         Extracts the response from the API response. Subclasses should
         override this method to implement their own response extraction.
         """
-        return response.choices[0].message.to_dict()
+        return {
+            "role": response.choices[0].message.role,
+            "content": response.choices[0].message.content
+        }
 
     def _count_tokens(self, messages: list, model: str):
         """
